@@ -66,17 +66,21 @@ with st.sidebar:
 # Dịch tiêu đề trang
 titles = {
     "English": {
+        "guide": "User Guide",
         "upload": "Data Upload",
         "log": "Log Visualizer",
         "ml": "ML Advisor",
         "prod": "Production Prediction",
+        "dca": "DCA & PLT Matching",
         "econ": "Economic Analysis"
     },
     "Vietnamese": {
+        "guide": "Hướng Dẫn Sử Dụng",
         "upload": "Upload Dữ Liệu",
         "log": "Log Visualizer",
         "ml": "ML Advisor",
         "prod": "Dự Báo Lưu Lượng",
+        "dca": "DCA & PLT Matching",
         "econ": "Phân Tích Kinh Tế"
     }
 }
@@ -85,11 +89,12 @@ t = titles[st.session_state.lang]
 
 # Định nghĩa các trang với tiêu đề động
 pages = [
+    st.Page("app_pages/0_user_guide.py", title=t["guide"], icon=":material/menu_book:"),
     st.Page("app_pages/1_data_upload.py", title=t["upload"], icon=":material/upload_file:"),
     st.Page("app_pages/2_log_viewer.py", title=t["log"], icon=":material/stacked_line_chart:"),
     st.Page("app_pages/3_ml_advisor.py", title=t["ml"], icon=":material/psychology:"),
     st.Page("app_pages/4_production_prediction.py", title=t["prod"], icon=":material/water_drop:"),
-    st.Page("app_pages/6_decline_analysis.py", title="Suy Giảm & PLT Matching", icon=":material/trending_down:"),
+    st.Page("app_pages/6_decline_analysis.py", title="DCA & PLT Matching", icon=":material/trending_down:"),
     st.Page("app_pages/5_economics.py", title=t["econ"], icon=":material/monetization_on:"),
 ]
 
