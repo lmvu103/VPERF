@@ -133,7 +133,7 @@ texts = {
         "step6_title": "💰 Financial & Economic Assessment",
         "step6_desc": "Compute 3-Year NPV and investment Payback Period. Using custom financial parameters, all new proposals are ranked by investment priority so you target only the economically viable best reservoir bands.",
         
-        "author_title": "Lead Software & Reservoir Engineer",
+        "author_title": "Lead Petroleum & Reservoir Engineer",
         "author_contact": "📧 Get in Touch:"
     },
     "Vietnamese": {
@@ -163,7 +163,7 @@ texts = {
         "step6_title": "💰 Đánh giá hiệu quả kinh tế đầu tư",
         "step6_desc": "Tính toán chỉ số NPV 3 năm và Thời gian hoàn vốn đầu tư (Payback Period). Dựa trên giá dầu dự báo và các tham số chi phí, hệ thống sẽ xếp hạng ưu tiên đầu tư để hỗ trợ ra quyết định bắn mở vỉa hiệu quả.",
         
-        "author_title": "Kỹ sư Công nghệ & Phầm mềm Dầu khí",
+        "author_title": "Kỹ sư Dầu khí & Công nghệ mỏ",
         "author_contact": "📧 Liên hệ tác giả:"
     }
 }
