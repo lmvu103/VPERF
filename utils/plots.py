@@ -3,6 +3,56 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+def group_intervals(df, class_col, rate_col, threshold=1.0):
+    """Nhóm các điểm liên tiếp thành các khoảng (intervals)"""
+    if df.empty:
+        return []
+    
+    df = df.sort_values('Depth')
+    intervals = []
+    
+    current_interval = {
+        'top': df.iloc[0]['Depth'],
+        'bottom': df.iloc[0]['Depth'],
+        'class': df.iloc[0][class_col],
+        'rates': [df.iloc[0][rate_col]] if rate_col in df.columns else []
+    }
+    
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        # Nếu cùng class và khoảng cách độ sâu nhỏ (liên tiếp)
+        if row[class_col] == current_interval['class'] and (row['Depth'] - current_interval['bottom']) <= threshold:
+            current_interval['bottom'] = row['Depth']
+            if rate_col in df.columns and pd.notna(row[rate_col]):
+                current_interval['rates'].append(row[rate_col])
+        else:
+            # Lưu khoảng cũ
+            avg_rate = np.mean(current_interval['rates']) if current_interval['rates'] else np.nan
+            intervals.append({
+                'top': current_interval['top'],
+                'bottom': current_interval['bottom'],
+                'class': current_interval['class'],
+                'rate': avg_rate
+            })
+            # Bắt đầu khoảng mới
+            current_interval = {
+                'top': row['Depth'],
+                'bottom': row['Depth'],
+                'class': row[class_col],
+                'rates': [row[rate_col]] if rate_col in df.columns else []
+            }
+            
+    # Thêm khoảng cuối cùng
+    avg_rate = np.mean(current_interval['rates']) if current_interval['rates'] else np.nan
+    intervals.append({
+        'top': current_interval['top'],
+        'bottom': current_interval['bottom'],
+        'class': current_interval['class'],
+        'rate': avg_rate
+    })
+    
+    return intervals
+
 def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, show_proposal=False):
     """Vẽ biểu đồ Log với track độ sâu riêng biệt, hiển thị thực tế vs đề xuất ML kèm dự báo Qo"""
     if selected_logs is None:
@@ -13,6 +63,7 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
     n_wells = len(wells)
     n_logs = len(selected_logs)
     
+    # Số lượng track: Depth + Logs + Actual (+ Proposed)
     n_tracks_per_well = 1 + n_logs + 1 
     if show_proposal:
         n_tracks_per_well += 1
@@ -42,7 +93,8 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
         'Vshale': '#bf8700',
         'Gamma_Ray': '#1a7f37',
         'GR': '#1a7f37',
-        'Reservoir_Pressure': '#e34c26'
+        'Reservoir_Pressure': '#e34c26',
+        'Netpay': '#1a7f37'
     }
 
     perf_colors = {
@@ -75,10 +127,15 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
             curr_col = start_col + 1 + j
             if log in w_data.columns:
                 line_color = color_map.get(log, '#57606a')
+                fill_mode = 'tozerox' if log == 'Netpay' else None
+                fill_color = 'rgba(26, 127, 55, 0.2)' if log == 'Netpay' else None
+                
                 fig.add_trace(
                     go.Scatter(x=w_data[log], y=w_data['Depth'], name=log, 
                                legendgroup=log, showlegend=(i == 0),
                                line=dict(color=line_color),
+                               fill=fill_mode,
+                               fillcolor=fill_color,
                                hovertemplate=f"Depth: %{{y}}m<br>{log}: %{{x}}<extra></extra>"),
                     row=1, col=curr_col
                 )
@@ -86,49 +143,110 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
                 if log in well_s:
                     fig.update_xaxes(range=well_s[log], row=1, col=curr_col)
                 
-        # 3. Actual Perfs Track
+        # 3. Actual Perfs Track (Đã được nhóm)
         actual_perf_col = start_col + 1 + n_logs
         if 'Is_Perforated' in w_data.columns:
-            perf_zones = w_data[(w_data['Is_Perforated'] == True) & 
-                                (w_data['Production_Class'].isin(perf_colors.keys()))]
-            if not perf_zones.empty:
-                for p_class, color in perf_colors.items():
-                    class_data = perf_zones[perf_zones['Production_Class'] == p_class]
-                    if not class_data.empty:
-                        rates = [f" {r:.0f}" if pd.notna(r) else "" for r in class_data['Initial_Rate']]
-                        fig.add_trace(
-                            go.Scatter(x=[1]*len(class_data), y=class_data['Depth'], 
-                                       mode='markers+text', name=f"Actual: {p_class}",
-                                       legendgroup=p_class, showlegend=(i==0),
-                                       marker=dict(symbol='square', color=color, size=9),
-                                       text=rates,
-                                       textposition="middle right",
-                                       textfont=dict(color=color, size=9, family="Inter, sans serif"),
-                                       hovertemplate="<b>Actual " + p_class + "</b><br>Depth: %{y}m<extra></extra>"),
-                            row=1, col=actual_perf_col
-                        )
-                fig.update_xaxes(range=[0, 3], showticklabels=False, row=1, col=actual_perf_col)
+            perf_df = w_data[w_data['Is_Perforated'] == True]
+            intervals = group_intervals(perf_df, 'Production_Class', 'Initial_Rate', threshold=1.2)
+            
+            for interval in intervals:
+                p_class = interval['class']
+                color = perf_colors.get(p_class, '#57606a')
+                mid_depth = (interval['top'] + interval['bottom']) / 2
+                
+                # Vẽ dải màu cho khoảng bắn
+                fig.add_trace(
+                    go.Scatter(
+                        x=[1, 1], y=[interval['top'], interval['bottom']],
+                        mode='lines',
+                        line=dict(color=color, width=20), # Tăng độ rộng một chút để chứa chữ
+                        name=f"Actual: {p_class}",
+                        legendgroup=p_class,
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ),
+                    row=1, col=actual_perf_col
+                )
+                
+                # Hiển thị lưu lượng tại trung điểm - Nằm giữa dải màu
+                rate_text = f"{interval['rate']:.0f}" if pd.notna(interval['rate']) else ""
+                if rate_text:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[1], y=[mid_depth],
+                            mode='text',
+                            text=[rate_text],
+                            textposition="middle center",
+                            textfont=dict(color='white', size=10, weight='bold'),
+                            showlegend=False,
+                            hovertemplate=f"<b>Actual {p_class}</b><br>Top: {interval['top']:.1f}m<br>Base: {interval['bottom']:.1f}m<br>Qo: {rate_text} BOPD<extra></extra>"
+                        ),
+                        row=1, col=actual_perf_col
+                    )
 
-        # 4. Proposed Perfs Track (ML Advisor)
+            # Thêm legend giả
+            if i == 0:
+                for p_class, color in perf_colors.items():
+                    fig.add_trace(
+                        go.Scatter(x=[None], y=[None], mode='markers',
+                                   marker=dict(symbol='square', color=color, size=10),
+                                   name=f"Actual: {p_class}", legendgroup=p_class),
+                        row=1, col=actual_perf_col
+                    )
+
+            fig.update_xaxes(range=[0, 2], showticklabels=False, row=1, col=actual_perf_col)
+
+        # 4. Proposed Perfs Track (ML Advisor) - Đã được nhóm theo class
         if show_proposal:
             proposed_perf_col = actual_perf_col + 1
             if 'Predicted_Class' in w_data.columns:
-                prop_zones = w_data[w_data['Predicted_Class'] == 'BEST']
-                if not prop_zones.empty:
-                    # Hiển thị dự báo Qo cho các khoảng đề xuất nếu có
-                    p_rates = [f" {r:.0f}" if (pd.notna(r) and r > 0) else "" for r in prop_zones.get('Predicted_Qo', [np.nan]*len(prop_zones))]
+                # Không lọc cứng 'BEST' nữa mà lấy tất cả các dòng có dự báo
+                prop_df = w_data[w_data['Predicted_Class'].isin(perf_colors.keys())]
+                prop_intervals = group_intervals(prop_df, 'Predicted_Class', 'Predicted_Qo', threshold=2.0)
+                
+                for interval in prop_intervals:
+                    p_class = interval['class']
+                    mid_depth = (interval['top'] + interval['bottom']) / 2
+                    color = perf_colors.get(p_class, '#1a7f37') 
                     
+                    # Vẽ dải màu cho khoảng đề xuất (nét đứt để phân biệt với Actual)
                     fig.add_trace(
-                        go.Scatter(x=[1]*len(prop_zones), y=prop_zones['Depth'], 
-                                   mode='markers+text', name="Đề xuất BEST",
-                                   legendgroup="Proposed", showlegend=(i==0),
-                                   marker=dict(symbol='star', color='#1a7f37', size=11, line=dict(color='white', width=1)),
-                                   text=p_rates,
-                                   textposition="middle right",
-                                   textfont=dict(color='#1a7f37', size=10, family="Inter, sans serif"),
-                                   hovertemplate="<b>Đề xuất BEST</b><br>Depth: %{y}m<br>Dự báo Qo: %{text} BOPD<extra></extra>"),
+                        go.Scatter(
+                            x=[1, 1], y=[interval['top'], interval['bottom']],
+                            mode='lines',
+                            line=dict(color=color, width=20, dash='dot'),
+                            name=f"Proposed: {p_class}",
+                            legendgroup=f"Proposed_{p_class}",
+                            showlegend=False,
+                            hoverinfo='skip'
+                        ),
                         row=1, col=proposed_perf_col
                     )
+                    
+                    rate_text = f"{interval['rate']:.0f}" if pd.notna(interval['rate']) else ""
+                    if rate_text:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[1], y=[mid_depth],
+                                mode='text',
+                                text=[rate_text],
+                                textposition="middle center",
+                                textfont=dict(color='white', size=10, weight='bold'),
+                                showlegend=False,
+                                hovertemplate=f"<b>Proposed {p_class}</b><br>Top: {interval['top']:.1f}m<br>Base: {interval['bottom']:.1f}m<br>Dự báo Qo: {rate_text} BOPD<extra></extra>"
+                            ),
+                            row=1, col=proposed_perf_col
+                        )
+
+                # Thêm legend cho Proposed (chỉ lần đầu)
+                if i == 0:
+                    for p_class, color in perf_colors.items():
+                        fig.add_trace(
+                            go.Scatter(x=[None], y=[None], mode='markers',
+                                       marker=dict(symbol='square', color=color, size=10, line=dict(dash='dot', width=1)),
+                                       name=f"Proposed: {p_class}", legendgroup=f"Proposed_{p_class}"),
+                            row=1, col=proposed_perf_col
+                        )
                 fig.update_xaxes(range=[0, 4], showticklabels=False, row=1, col=proposed_perf_col)
 
         # Cấu hình trục Y

@@ -89,7 +89,8 @@ pages = [
     st.Page("app_pages/2_log_viewer.py", title=t["log"], icon=":material/stacked_line_chart:"),
     st.Page("app_pages/3_ml_advisor.py", title=t["ml"], icon=":material/psychology:"),
     st.Page("app_pages/4_production_prediction.py", title=t["prod"], icon=":material/water_drop:"),
-    st.Page("app_pages/5_economics.py", title=t["econ"], icon=":material/monetization_on:")
+    st.Page("app_pages/6_decline_analysis.py", title="Suy Giảm & PLT Matching", icon=":material/trending_down:"),
+    st.Page("app_pages/5_economics.py", title=t["econ"], icon=":material/monetization_on:"),
 ]
 
 page = st.navigation(pages, position="sidebar")
