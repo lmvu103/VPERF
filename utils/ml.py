@@ -38,8 +38,28 @@ def train_and_predict(df):
 
 def train_advanced_model(df):
     """Huấn luyện mô hình với bộ tính năng mở rộng bằng Gradient Boosting."""
-    # Lọc dữ liệu lịch sử (đã bắn và có nhãn kết quả)
-    available_features = [f for f in EXTENDED_FEATURES if f in df.columns]
+    # Tạo bản sao tránh side-effect
+    df = df.copy()
+    
+    # Tự động tính toán Permeability từ Porosity và Sw nếu cột này bị Null hoàn toàn hoặc phần lớn
+    if 'Permeability' in df.columns and (df['Permeability'].isna().all() or df['Permeability'].isna().sum() > len(df) * 0.9):
+        df['Permeability'] = 10 ** (3 * df['Porosity']) * (1 - df['Sw']) ** 2
+        df['Permeability'] = df['Permeability'].clip(0.01, 5000.0)
+
+    # Tự động giả lập khoảng cách tới OWC nếu bị khuyết
+    if 'Distance_to_OWC' in df.columns and df['Distance_to_OWC'].isna().all():
+        df['Distance_to_OWC'] = np.abs(df['Depth'] - 3150.0)
+
+    # Tự động giả lập áp suất vỉa theo gradient thủy tĩnh
+    if 'Reservoir_Pressure' in df.columns and df['Reservoir_Pressure'].isna().all():
+        df['Reservoir_Pressure'] = 0.1 * df['Depth']
+
+    # TVD Depth mặc định bằng Depth nếu bị Null
+    if 'TVD_Depth' in df.columns and df['TVD_Depth'].isna().all():
+        df['TVD_Depth'] = df['Depth']
+
+    # Lọc dữ liệu lịch sử (đã bắn và có nhãn kết quả), bỏ qua các feature bị Null hoàn toàn
+    available_features = [f for f in EXTENDED_FEATURES if f in df.columns and not df[f].isna().all()]
     if not available_features:
         return None, None
         
@@ -60,8 +80,23 @@ def train_advanced_model(df):
 
 def train_production_model(df):
     """Huấn luyện mô hình dự báo lưu lượng Q_o."""
+    df = df.copy()
+    
+    # Tự động tính toán Permeability từ Porosity và Sw nếu cột này bị Null hoàn toàn hoặc phần lớn
+    if 'Permeability' in df.columns and (df['Permeability'].isna().all() or df['Permeability'].isna().sum() > len(df) * 0.9):
+        df['Permeability'] = 10 ** (3 * df['Porosity']) * (1 - df['Sw']) ** 2
+        df['Permeability'] = df['Permeability'].clip(0.01, 5000.0)
+
+    # Tự động giả lập khoảng cách tới OWC nếu bị khuyết
+    if 'Distance_to_OWC' in df.columns and df['Distance_to_OWC'].isna().all():
+        df['Distance_to_OWC'] = np.abs(df['Depth'] - 3150.0)
+
+    # Tự động giả lập áp suất vỉa theo gradient thủy tĩnh
+    if 'Reservoir_Pressure' in df.columns and df['Reservoir_Pressure'].isna().all():
+        df['Reservoir_Pressure'] = 0.1 * df['Depth']
+
     # Kiểm tra các feature cần thiết có trong DataFrame không
-    available_features = [f for f in PRODUCTION_FEATURES if f in df.columns]
+    available_features = [f for f in PRODUCTION_FEATURES if f in df.columns and not df[f].isna().all()]
     if not available_features:
         return None, None
 
