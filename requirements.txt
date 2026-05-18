@@ -6,3 +6,4 @@ shap>=0.44.0
 matplotlib>=3.8.0
 plotly>=5.18.0
 statsmodels>=0.14.0
+lasio>=0.30.0
