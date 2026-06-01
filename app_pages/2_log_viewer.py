@@ -5,6 +5,17 @@ import matplotlib.pyplot as plt
 from utils.plots import plot_well_logs
 from utils.ml import PRODUCTION_FEATURES
 
+@st.cache_data(show_spinner=False)
+def cached_plot_well_logs(df_json, wells, depth_range, selected_logs, log_scales_json, show_proposal=False):
+    """Cache wrapper to avoid re-rendering chart when inputs are unchanged."""
+    import json
+    from io import StringIO
+    df = pd.read_json(StringIO(df_json), orient='split')
+    log_scales = json.loads(log_scales_json) if log_scales_json else {}
+    # Convert list tuples back
+    log_scales = {w: {lg: tuple(v) for lg, v in logs.items()} for w, logs in log_scales.items()}
+    return plot_well_logs(df, list(wells), depth_range, list(selected_logs), log_scales, show_proposal)
+
 if st.session_state.processed_df is None:
     # Dịch thông báo lỗi nếu chưa upload dữ liệu
     warn_msg = "Please upload and analyze data at the Data Upload page first." if st.session_state.lang == "English" else "Vui lòng tải dữ liệu và phân tích ở trang Upload Dữ Liệu trước."
@@ -78,7 +89,7 @@ with col1:
         wells = []
         st.error(t["no_well_name"], icon=":material/error:")
 
-    exclude_cols = ['Depth', 'Well_Name', 'Is_Perforated', 'Production_Class', 'Initial_Rate', 'Predicted_Class', 'Confidence', 'Predicted_Qo', 'Unnamed: 0']
+    exclude_cols = ['Depth', 'Well_Name', 'Is_Perforated', 'Production_Class', 'Initial_Rate', 'Predicted_Class', 'Confidence', 'Predicted_Qo', 'Unnamed: 0', 'Zone']
     numeric_cols = processed_df.select_dtypes(include='number').columns.tolist()
     available_logs = [col for col in numeric_cols if col not in exclude_cols]
     
@@ -137,7 +148,15 @@ if not wells:
 elif not selected_logs:
     st.info(t["info_select_log"], icon=":material/info:")
 else:
-    fig = plot_well_logs(processed_df, wells, depth_range, selected_logs, log_scales)
+    import json
+    with st.spinner("Đang vẽ biểu đồ..." if st.session_state.lang == "Vietnamese" else "Rendering chart..."):
+        fig = cached_plot_well_logs(
+            processed_df.to_json(orient='split'),
+            tuple(wells),
+            depth_range,
+            tuple(selected_logs),
+            json.dumps({w: {lg: list(v) for lg, v in logs.items()} for w, logs in log_scales.items()})
+        )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(t["zoom_tip"])
 

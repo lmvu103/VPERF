@@ -54,7 +54,7 @@ def group_intervals(df, class_col, rate_col, threshold=1.0):
     return intervals
 
 def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, show_proposal=False):
-    """Vẽ biểu đồ Log với track độ sâu riêng biệt, hiển thị thực tế vs đề xuất ML kèm dự báo Qo và track Phân Vỉa (Zone Name)"""
+    """Vẽ biểu đồ Log với track độ sâu riêng biệt, hiển thị thực tế vs đề xuất ML kèm dự báo Qo"""
     if selected_logs is None:
         selected_logs = ['Porosity', 'Sw']
     if log_scales is None:
@@ -63,8 +63,8 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
     n_wells = len(wells)
     n_logs = len(selected_logs)
     
-    # Số lượng track: Depth + Zone + Logs + Actual (+ Proposed)
-    n_tracks_per_well = 1 + 1 + n_logs + 1 
+    # Số lượng track: Depth + Logs + Actual (+ Proposed)
+    n_tracks_per_well = 1 + n_logs + 1 
     if show_proposal:
         n_tracks_per_well += 1
         
@@ -73,7 +73,6 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
     column_titles = []
     for w in wells:
         column_titles.append("Depth")
-        column_titles.append("Zone")
         for log in selected_logs:
             column_titles.append(log[:4])
         column_titles.append("Actual")
@@ -113,8 +112,13 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
         start_col = i * n_tracks_per_well + 1
         
         # 1. Depth Track
-        depth_ticks = np.arange(np.floor(w_data['Depth'].min()/10)*10, 
-                                np.ceil(w_data['Depth'].max()/10)*10 + 10, 10)
+        if w_data.empty:
+            min_depth, max_depth = depth_range[0], depth_range[1]
+        else:
+            min_depth, max_depth = w_data['Depth'].min(), w_data['Depth'].max()
+            
+        depth_ticks = np.arange(np.floor(min_depth/10)*10, 
+                                np.ceil(max_depth/10)*10 + 10, 10)
         fig.add_trace(
             go.Scatter(x=[0.5] * len(depth_ticks), y=depth_ticks, mode="text",
                        text=[str(int(d)) for d in depth_ticks],
@@ -123,91 +127,9 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
         )
         fig.update_xaxes(range=[0, 1], showticklabels=False, showgrid=False, row=1, col=start_col)
 
-        # 1b. Zone Name Track
-        zone_track_col = start_col + 1
-        if 'Zone_Name' in w_data.columns:
-            w_data_sorted = w_data.sort_values('Depth').copy()
-            w_data_sorted['zone_change'] = w_data_sorted['Zone_Name'] != w_data_sorted['Zone_Name'].shift()
-            w_data_sorted['zone_group'] = w_data_sorted['zone_change'].cumsum()
-            
-            zone_intervals = []
-            for z_grp in w_data_sorted['zone_group'].unique():
-                z_df = w_data_sorted[w_data_sorted['zone_group'] == z_grp]
-                if not z_df.empty:
-                    zone_name = z_df['Zone_Name'].iloc[0]
-                    if pd.notna(zone_name) and str(zone_name).strip() != '' and str(zone_name).lower() != 'nan':
-                        zone_intervals.append({
-                            'name': str(zone_name),
-                            'top': z_df['Depth'].min(),
-                            'base': z_df['Depth'].max()
-                        })
-            
-            for i_zone, interval in enumerate(zone_intervals):
-                mid_depth = (interval['top'] + interval['base']) / 2
-                
-                # alternating fills for zones
-                fig.add_trace(
-                    go.Scatter(
-                        x=[0, 1, 1, 0, 0],
-                        y=[interval['top'], interval['top'], interval['base'], interval['base'], interval['top']],
-                        fill='toself',
-                        fillcolor='rgba(9, 105, 218, 0.04)' if i_zone % 2 == 0 else 'rgba(140, 149, 159, 0.08)',
-                        line=dict(color='rgba(0,0,0,0)'),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ),
-                    row=1, col=zone_track_col
-                )
-                
-                # solid boundary lines for zones
-                fig.add_trace(
-                    go.Scatter(
-                        x=[0, 1], y=[interval['top'], interval['top']],
-                        mode='lines',
-                        line=dict(color='#8c959f', width=1),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ),
-                    row=1, col=zone_track_col
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=[0, 1], y=[interval['base'], interval['base']],
-                        mode='lines',
-                        line=dict(color='#8c959f', width=1),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ),
-                    row=1, col=zone_track_col
-                )
-                
-                # label in the center
-                fig.add_trace(
-                    go.Scatter(
-                        x=[0.5], y=[mid_depth],
-                        mode='text',
-                        text=[interval['name']],
-                        textposition='middle center',
-                        textfont=dict(size=9, color='#24292f', weight='bold'),
-                        showlegend=False,
-                        hovertemplate=f"<b>Zone: {interval['name']}</b><br>Top: {interval['top']:.1f}m<br>Base: {interval['base']:.1f}m<extra></extra>"
-                    ),
-                    row=1, col=zone_track_col
-                )
-                
-                # Horizontal marker line across ALL tracks of this well
-                for track_offset in range(n_tracks_per_well):
-                    curr_col_idx = start_col + track_offset
-                    fig.add_hline(
-                        y=interval['top'], row=1, col=curr_col_idx,
-                        line_dash="dash", line_color="rgba(140, 149, 159, 0.4)", line_width=1
-                    )
-                    
-        fig.update_xaxes(range=[0, 1], showticklabels=False, showgrid=False, row=1, col=zone_track_col)
-
         # 2. Log Tracks
         for j, log in enumerate(selected_logs):
-            curr_col = start_col + 2 + j
+            curr_col = start_col + 1 + j
             if log in w_data.columns:
                 line_color = color_map.get(log, '#57606a')
                 fill_mode = 'tozerox' if log == 'Netpay' else None
@@ -227,7 +149,7 @@ def plot_well_logs(df, wells, depth_range, selected_logs=None, log_scales=None, 
                     fig.update_xaxes(range=well_s[log], row=1, col=curr_col)
                 
         # 3. Actual Perfs Track (Đã được nhóm)
-        actual_perf_col = start_col + 2 + n_logs
+        actual_perf_col = start_col + 1 + n_logs
         if 'Is_Perforated' in w_data.columns:
             perf_df = w_data[w_data['Is_Perforated'] == True]
             intervals = group_intervals(perf_df, 'Production_Class', 'Initial_Rate', threshold=1.2)

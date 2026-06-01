@@ -130,16 +130,18 @@ def calculate_net_pay(df, class_col='Predicted_Class', target_classes=None, prod
             pred_rate = None
             if prod_model and prod_features:
                 if all(f in group_df.columns for f in prod_features):
-                    rates = prod_model.predict(group_df[prod_features])
-                    pred_rate = np.mean(rates)
-                    
-                    if "layer_decline" in st.session_state:
-                        ld_df = st.session_state.layer_decline
-                        avg_decline = ld_df['Decline_Rate_Annual'].mean()
-                        years = 3.0 
-                        pred_rate = pred_rate * np.exp(-avg_decline * years)
-                    
-                    pred_rate = round(pred_rate, 1)
+                    valid_group_df = group_df.dropna(subset=prod_features)
+                    if not valid_group_df.empty:
+                        rates = prod_model.predict(valid_group_df[prod_features])
+                        pred_rate = np.mean(rates)
+                        
+                        if "layer_decline" in st.session_state:
+                            ld_df = st.session_state.layer_decline
+                            avg_decline = ld_df['Decline_Rate_Annual'].mean()
+                            years = 3.0 
+                            pred_rate = pred_rate * np.exp(-avg_decline * years)
+                        
+                        pred_rate = round(pred_rate, 1)
                     
             results.append({
                 'Well_Name': well,
@@ -245,11 +247,20 @@ if model and used_features:
     # Dự báo khoảng mới
     unperf_df = df[df['Is_Perforated'] == False].copy()
     if not unperf_df.empty:
-        preds = model.predict(unperf_df[used_features])
-        probs = model.predict_proba(unperf_df[used_features])
+        # Lọc bỏ các dòng có chứa NaN trong các features được sử dụng
+        valid_mask = unperf_df[used_features].notna().all(axis=1)
+        valid_unperf_df = unperf_df[valid_mask]
         
-        unperf_df['Predicted_Class'] = preds
-        unperf_df['Confidence'] = np.max(probs, axis=1)
+        # Khởi tạo giá trị mặc định cho Predicted_Class và Confidence
+        unperf_df['Predicted_Class'] = None
+        unperf_df['Confidence'] = np.nan
+        
+        if not valid_unperf_df.empty:
+            preds = model.predict(valid_unperf_df[used_features])
+            probs = model.predict_proba(valid_unperf_df[used_features])
+            
+            unperf_df.loc[valid_mask, 'Predicted_Class'] = preds
+            unperf_df.loc[valid_mask, 'Confidence'] = np.max(probs, axis=1)
 
         st.markdown(f"### {t['best_zones_header']}")
         
@@ -264,15 +275,16 @@ if model and used_features:
         if prod_model and prod_features:
             target_classes = ['BEST', 'GOOD', 'MEDIUM']
             best_mask = (full_df['Predicted_Class'].isin(target_classes)) & (full_df['Is_Perforated'] == False)
-            if best_mask.any():
-                full_df.loc[best_mask, 'Predicted_Qo'] = prod_model.predict(full_df.loc[best_mask, prod_features])
+            valid_prod_mask = best_mask & full_df[prod_features].notna().all(axis=1)
+            if valid_prod_mask.any():
+                full_df.loc[valid_prod_mask, 'Predicted_Qo'] = prod_model.predict(full_df.loc[valid_prod_mask, prod_features])
         
         # Tính toán Net Pay và Dự báo Qo
         net_pay_df = calculate_net_pay(full_df, prod_model=prod_model, prod_features=prod_features)
         
         if not net_pay_df.empty:
             # Khôi phục slider cấu hình Net Pay tối thiểu theo yêu cầu "có netpay lớn (bỏ default >0.1)"
-            min_net_pay = st.slider(t["min_net_pay_label"], 0.1, 10.0, 1.0, step=0.1)
+            min_net_pay = st.slider(t["min_net_pay_label"], 0.1, 10.0, 0.1, step=0.1)
             
             filtered_proposals = net_pay_df[net_pay_df['Net_Pay'] >= min_net_pay]
             st.session_state.ml_proposals = filtered_proposals
